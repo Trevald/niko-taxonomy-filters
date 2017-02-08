@@ -25,8 +25,9 @@ function niko_taxonomy_filters_add_taxonomy_filters() {
 	if( !empty($taxonomies) ) {
  
 		foreach( $taxonomies as $tax_slug ) {
-			// Regular posts already have dropdown for default categories
-			if( $current_post_type == 'post' && $tax_slug === 'category' ) { continue; }
+			
+			// Default categories are added by default
+			if( $tax_slug === 'category' ) { continue; }
 
 			// Get taxonomy name and terms
 			$tax_obj = get_taxonomy($tax_slug);
@@ -37,7 +38,6 @@ function niko_taxonomy_filters_add_taxonomy_filters() {
 			if( count($terms) > 0 ) {
 				echo '<select name="' .$tax_slug. '" id="' .$tax_slug. '" class="postform">';
 				echo '<option value="">' .__('All').' '.$tax_name. '</option>';
-				
 
 				foreach ($terms as $term) { 
 					echo '<option value="' .$term->slug. '"';
