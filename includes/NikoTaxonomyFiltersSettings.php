@@ -8,10 +8,33 @@
 class Niko_Taxonomy_Filters_Settings {
    /**
      * Holds the values to be used in the fields callbacks
+     * @var array
      */
     private $options;
 
+    /**
+     * Available post types
+     * @var array
+     */
     private $post_types;
+
+    /**
+     * Key of database entry
+     * @var string
+     */
+    private $db_key = 'niko_tf_options';
+
+    /**
+     * Options page ID
+     * @var string
+     */
+    private $page_id = 'niko_tf-setting-admin';
+
+    /**
+     * Options group ID
+     * @var string
+     */
+    private $group_id = 'niko_tf_option_group';
 
     /**
      * Start up
@@ -20,6 +43,17 @@ class Niko_Taxonomy_Filters_Settings {
     {   
         add_action( 'admin_menu', array( $this, 'add_plugin_page' ) );
         add_action( 'admin_init', array( $this, 'page_init' ) );
+    }
+
+    /**
+     * Get options
+     * @return void
+     */
+    private function getOptions() {
+        if( get_option($this->db_key) === false ) {
+            add_option($this->db_key, array('excluded' => array()));
+        }
+        return get_option( $this->db_key );   
     }
 
     /**
@@ -32,7 +66,7 @@ class Niko_Taxonomy_Filters_Settings {
             'Niko Taxonomy Filters Settings', 
             'NTF Settings', 
             'manage_options', 
-            'niko_tf-setting-admin', 
+            $this->page_id, 
             array( $this, 'create_admin_page' )
         );
     }
@@ -42,27 +76,28 @@ class Niko_Taxonomy_Filters_Settings {
      */
     public function create_admin_page()
     {
-        $this->options = get_option( 'niko_tf_options' );
+        print '<div class="wrap">';
+        print '<h1>Niko Taxonomy Filters Settings</h1>';
+        print '<form method="post" action="options.php">';
+        
+        // This prints out all hidden setting fields
+        settings_fields( $this->group_id );
+        do_settings_sections( $this->page_id );
+        submit_button();
 
-        ?>
-        <div class="wrap">
-            <h1>Niko Taxonomy Filters Settings</h1>
-            <form method="post" action="options.php">
-            <?php
-                // This prints out all hidden setting fields
-                settings_fields( 'niko_tf_option_group' );
-                do_settings_sections( 'niko_tf-setting-admin' );
-                submit_button();
-            ?>
-            </form>
-        </div>
-        <?php
+        print '</form>';
+        print '</div>';
     }
 
+    /**
+     * Get only the post types that we want to handle
+     * @return array
+     */
     private function get_post_types() 
     {
         $post_types = get_post_types();
         $exclude = array('post', 'attachment', 'revision', 'nav_menu_item', 'custom_css', 'customize_changeset');
+        
         return array_diff($post_types, $exclude);
     }
 
@@ -74,49 +109,61 @@ class Niko_Taxonomy_Filters_Settings {
         
         // Set class property
         $this->post_types = $this->get_post_types();
-        $this->options = get_option( 'niko_tf_options' );
+        $this->options = $this->getOptions();
 
         register_setting(
-            'niko_tf_option_group', // Option group
-            'niko_tf_options', // Option name
+            $this->group_id, // Option group
+            $this->db_key, // Option name
             array( $this, 'sanitize' ) // Sanitize
         );
 
-        // Loop through all registered post types and register sections for each
+        $this->add_settings_section();
+    }
 
+    /**
+     * Add settings section for all post types
+     */
+    private function add_settings_section() {
+        // Loop through all registered post types and register sections for each
         foreach( $this->post_types as $post_type ) {
-            
             $section_id = 'niko_tf-section-' . $post_type;
 
             add_settings_section(
                 $section_id, // ID
                 ucfirst($post_type), // Title
                 array( $this, 'print_section_info' ), // Callback
-                'niko_tf-setting-admin' // Page
+                $this->page_id // Page
             );  
 
-            // Add inputs for each taxonomy registered for current post type
-            $taxonomies = get_object_taxonomies( $post_type );
+            $this->add_settings_fields($post_type, $section_id);
+        }      
+    }
 
-            foreach( $taxonomies as $tax_slug ) {
-                if( $tax_slug === 'category' ) { continue; }
-                $tax_obj = get_taxonomy($tax_slug);
-                $field_id = 'niko_tf-setting|' . $post_type . '|' . $tax_slug . '';
-                $checked = $this->is_excluded($post_type, $tax_slug);
+    /**
+     * Get all taxonomies for post type and add a settings field for each
+     * @param string $post_type  Post type
+     * @param string $section_id Id of settings section
+     */
+    private function add_settings_fields($post_type, $section_id) {
+        $taxonomies = get_object_taxonomies( $post_type );
+        foreach( $taxonomies as $tax_slug ) {
+            if( $tax_slug === 'category' ) { continue; } // Always exclude default taxonomy "category"
+            $tax_obj = get_taxonomy($tax_slug);
+            $field_id = 'niko_tf-setting|' . $post_type . '|' . $tax_slug . '';
+            $checked = $this->is_excluded($post_type, $tax_slug);
 
-                add_settings_field(
-                    $field_id,
-                    $tax_obj->labels->name,
-                    array( $this, 'taxonomy_callback' ), 
-                    'niko_tf-setting-admin', 
-                    $section_id,
-                    array(
-                        'label_for' =>  $field_id, 
-                        'checked' => $checked
-                    )
-                );
-            }
-        }
+            add_settings_field(
+                $field_id,
+                $tax_obj->labels->name,
+                array( $this, 'taxonomy_callback' ), 
+                $this->page_id, 
+                $section_id,
+                array(
+                    'label_for' =>  $field_id, 
+                    'checked' => $checked
+                )
+            );
+        }       
     }
 
     /**
@@ -148,11 +195,8 @@ class Niko_Taxonomy_Filters_Settings {
      */
     public function sanitize( $input )
     {   
-        if( !is_array($input) ) {
-            return array(
-                'exclude' => array()
-            );            
-        }
+        
+        if( !is_array($input) ) { $input = array(); }
 
         // Structure the data by array[post_type][tax]
         $inputs = array();
@@ -171,14 +215,13 @@ class Niko_Taxonomy_Filters_Settings {
             $taxonomies = get_object_taxonomies( $post_type );
 
             foreach( $taxonomies as $taxonomy ) {
+                if( $taxonomy === 'category' ) { continue; }
                 if( !isset($inputs[$post_type]) || !in_array($taxonomy, $inputs[$post_type]) ) {
                     if( !is_array($exclude[$post_type]) ) { $exclude[$post_type] = array(); }
                     $exclude[$post_type][] = $taxonomy;
                 }
             }
         }
-
-        // var_dump($exclude); die();
 
         return array(
             'exclude' => $exclude
